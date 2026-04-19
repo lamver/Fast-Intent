@@ -3,7 +3,7 @@ services:
     image: alpine:latest
     working_dir: /app
     volumes:
-      - .:/app  # Монтируем всё содержимое текущей папки, чтобы был доступ к скрипту .sh
+      - ${PWD}:/app  # Монтируем всё содержимое текущей папки, чтобы был доступ к скрипту .sh
       - ./models:/app/models # Отдельно выделяем папку для моделей (для ясности)
     entrypoint: ["/bin/sh", "-c"]
     command: 
