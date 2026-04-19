@@ -1,8 +1,10 @@
+import os
 import fasttext
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from sklearn.metrics.pairwise import cosine_similarity
 import numpy as np
+from typing import List
 
 # Создаем экземпляр приложения
 app = FastAPI(title="NLP Service")
