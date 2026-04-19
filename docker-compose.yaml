@@ -1,0 +1,17 @@
+services:
+  fintent:
+    build: .
+    env_file:
+      - .env
+    ports:
+      - "${PORT:-8000}:${PORT:-8000}"
+    volumes:
+      - .:/app
+    environment:
+      - PYTHONUNBUFFERED=1
+    deploy:
+      resources:
+        limits:
+          cpus: '${WORKERS:-4}'
+          memory: ${MEMEORY:-2G}
+    restart: always
