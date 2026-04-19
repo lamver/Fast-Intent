@@ -4,3 +4,4 @@ gunicorn
 fasttext-wheel
 wget
 numpy<2.0.0
+scikit-learn

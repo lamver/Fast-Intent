@@ -1,6 +1,8 @@
 import fasttext
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
+from sklearn.metrics.pairwise import cosine_similarity
+import numpy as np
 
 # Создаем экземпляр приложения
 app = FastAPI(title="NLP Service")
@@ -44,6 +46,30 @@ async def detect_language(data: TextRequest):
     return {
         "text": data.text,
         "top_predictions": results
+    }
+    
+class CompareRequest(BaseModel):
+    text1: str
+    text2: str
+
+@app.post("/compare-vectors", tags=["NLP"])
+async def compare_texts(data: CompareRequest):
+    if vector_model is None:
+        raise HTTPException(status_code=503, detail="Vector model not loaded")
+    
+    # 1. Получаем векторы для обеих фраз
+    # get_sentence_vector возвращает одномерный массив (300,)
+    v1 = vector_model.get_sentence_vector(data.text1).reshape(1, -1)
+    v2 = vector_model.get_sentence_vector(data.text2).reshape(1, -1)
+    
+    # 2. Считаем косинусное сходство (результат от 0 до 1)
+    similarity = cosine_similarity(v1, v2)[0][0]
+    
+    return {
+        "text1": data.text1,
+        "text2": data.text2,
+        "similarity": round(float(similarity), 4),
+        "percentage": f"{round(float(similarity) * 100, 2)}%"
     }
     
 @app.get("/healthcheck", tags=["System"])

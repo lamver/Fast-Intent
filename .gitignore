@@ -1,2 +1,4 @@
 .env
 __pycache__/main.cpython-310.pyc
+models/cc.en.300.bin
+models/lid.176.bin

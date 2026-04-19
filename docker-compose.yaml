@@ -1,6 +1,23 @@
 services:
+  downloader:
+    image: alpine:latest
+    working_dir: /app
+    volumes:
+      - .:/app  # Монтируем всё содержимое текущей папки, чтобы был доступ к скрипту .sh
+      - ./models:/app/models # Отдельно выделяем папку для моделей (для ясности)
+    entrypoint: ["/bin/sh", "-c"]
+    command: 
+      - |
+        apk add --no-cache curl bash gzip
+        chmod +x ./prepare_models.sh
+        ./prepare_models.sh
   fintent:
     build: .
+    depends_on:
+      downloader:
+        condition: service_completed_successfully # Ждет, пока downloader закончит работу
+    volumes:
+      - ./models:/app/models
     env_file:
       - .env
     ports:
@@ -13,5 +30,5 @@ services:
       resources:
         limits:
           cpus: '${WORKERS:-4}'
-          memory: ${MEMEORY:-2G}
+          memory: ${MEMEORY:-8G}
     restart: always

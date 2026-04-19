@@ -14,7 +14,11 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Скачиваем модель для ОПРЕДЕЛЕНИЯ языка (176 языков в одном файле)
-RUN curl -L https://dl.fbaipublicfiles.com/fasttext/supervised-models/lid.176.bin -o lid.176.bin
+#RUN curl -L https://dl.fbaipublicfiles.com/fasttext/supervised-models/lid.176.bin -o lid.176.bin
+#RUN curl -L https://dl.fbaipublicfiles.com/fasttext/vectors-crawl/cc.en.300.bin.gz | gunzip > cc.en.300.bin
+#RUN curl -L https://dl.fbaipublicfiles.com/fasttext/vectors-crawl/cc.es.300.bin.gz | gunzip > cc.es.300.bin
+#RUN curl -L https://dl.fbaipublicfiles.com/fasttext/vectors-crawl/cc.ru.300.bin.gz | gunzip > cc.ru.300.bin
+
 
 # Скачиваем модель для ВЕКТОРОВ (например, русскую)
 #RUN curl -L https://fbaipublicfiles.com | gunzip > cc.ru.300.bin
