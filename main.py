@@ -1,141 +1,97 @@
 import os
 import fasttext
+import numpy as np
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-from sklearn.metrics.pairwise import cosine_similarity
-import numpy as np
 from typing import List
+from sklearn.metrics.pairwise import cosine_similarity
 
-# Создаем экземпляр приложения
 app = FastAPI(title="NLP Service")
 
-# Глобальные переменные для моделей
-base_path = "/app/models"
+# ПУТИ И МОДЕЛИ
+BASE_PATH = "/app/models"
 vector_models = {}
 lang_model = None
 
+# ГЛОБАЛЬНАЯ ЗАГРУЗКА (Для корректной работы Gunicorn --preload)
 try:
-    print("Pre-loading models for Gunicorn workers...")
-    # 1. LID
-    lid_path = f"{base_path}/lid.176.bin"
+    print("--- Инициализация моделей ---")
+    # 1. Загрузка определителя языка
+    lid_path = os.path.join(BASE_PATH, "lid.176.bin")
     if os.path.exists(lid_path):
         lang_model = fasttext.load_model(lid_path)
-        print("LID loaded")
+        print("LID model: OK")
 
-    # 2. Векторы
+    # 2. Загрузка векторов
     for lang in ["ru", "en", "es"]:
-        path = f"{base_path}/cc.{lang}.300.bin"
+        path = os.path.join(BASE_PATH, f"cc.{lang}.300.bin")
         if os.path.exists(path):
             vector_models[lang] = fasttext.load_model(path)
-            print(f"Vector {lang} loaded")
+            print(f"Vector model {lang}: OK")
+    print(f"Загружено моделей: {list(vector_models.keys())}")
 except Exception as e:
-    print(f"MANUAL LOADING ERROR: {e}")
+    print(f"ОШИБКА ЗАГРУЗКИ: {e}")
 
-
-@app.on_event("startup")
-def load_models():
-    return True
-        
 class TextRequest(BaseModel):
     text: str
 
-@app.post("/detect-language", tags=["NLP"])
-async def detect_language(data: TextRequest):
-    if lang_model is None:
-        raise HTTPException(status_code=503, detail="Language model not loaded")
-    
-    # Берем топ-5, чтобы было из чего фильтровать
-    labels, probabilities = lang_model.predict(data.text, k=5)
-    
-    # Фильтруем: оставляем только те, где уверенность > 0.01
-    results = [
-        {
-            "language": label.replace("__label__", ""),
-            "confidence": round(float(prob), 4)
-        }
-        for label, prob in zip(labels, probabilities)
-        if float(prob) >= 0.01
-    ]
-    
-    return {
-        "text": data.text,
-        "top_predictions": results
-    }
-    
 class CompareRequest(BaseModel):
     text1: str
     text2: str
 
+def get_text_lang(text: str):
+    """Вспомогательная функция для получения чистого кода языка"""
+    if lang_model is None:
+        return "ru"
+    # Fasttext возвращает (('__label__ru',), array([0.99]))
+    prediction = lang_model.predict(text, k=1)
+    return prediction[0][0].replace("__label__", "")
+
+@app.post("/detect-language", tags=["NLP"])
+async def detect_language(data: TextRequest):
+    if lang_model is None:
+        raise HTTPException(status_code=503, detail="LID not loaded")
+    
+    labels, probabilities = lang_model.predict(data.text, k=3)
+    results = []
+    for l, p in zip(labels, probabilities):
+        results.append({
+            "language": l.replace("__label__", ""),
+            "confidence": round(float(p), 4)
+        })
+    return {"text": data.text, "predictions": results}
+
 @app.post("/compare-vectors", tags=["NLP"])
 async def compare_texts(data: CompareRequest):
-    global vector_models, lang_model
-    # 1. Определяем язык первого текста, чтобы выбрать модель
-    #labels, _ = lang_model.predict(data.text1, k=1)
-    predictions = lang_model.predict(data.text1, k=1)
-    lang = predictions[0][0].replace("__label__", "") 
+    # Определяем язык
+    lang = get_text_lang(data.text1)
     
-    # 2. Берем нужную модель (например, русскую по дефолту, если язык не поддерживается)
-    model = vector_models.get(lang, vector_models.get("ru"))
-    
+    # ВАЖНО: берем модель из словаря. Если нет - пробуем RU, если нет - берем любую доступную
+    model = vector_models.get(lang) or vector_models.get("ru")
+    if not model and vector_models:
+        model = list(vector_models.values())[0]
+
     if not model:
-        raise HTTPException(status_code=503, detail="Suitable vector model not loaded")
+        raise HTTPException(status_code=503, detail=f"Models dict is empty. Seen files: {os.listdir(BASE_PATH)}")
     
-    # 3. Получаем векторы
     v1 = model.get_sentence_vector(data.text1).reshape(1, -1)
     v2 = model.get_sentence_vector(data.text2).reshape(1, -1)
-    
-    # 4. Считаем сходство
     similarity = cosine_similarity(v1, v2)[0][0]
     
     return {
         "detected_language": lang,
-        "text1": data.text1,
-        "text2": data.text2,
         "similarity": round(float(similarity), 4),
         "percentage": f"{round(float(similarity) * 100, 2)}%"
-    }
-    
-@app.post("/embeddings")
-async def get_embeddings(data: TextRequest):
-    global vector_models, lang_model
-    # 1. Определяем, какой это язык
-    #labels, _ = lang_model.predict(data.text, k=1)
-    predictions = lang_model.predict(data.text1, k=1)
-    lang = predictions[0][0].replace("__label__", "") 
-    
-    # 2. Берем модель для этого языка (если нет — берем русскую по дефолту)
-    model = vector_models.get(lang, vector_models.get("ru"))
-    
-    if not model:
-        raise HTTPException(status_code=503, detail="Requested vector model not loaded")
-    
-    vector = model.get_sentence_vector(data.text)
-    return {
-        "language": lang,
-        "embedding": vector.tolist()
     }
 
 @app.get("/debug-models", tags=["System"])
 async def debug_models():
-    import os
-    files_in_folder = os.listdir("/app/models") if os.path.exists("/app/models") else "Folder not found"
     return {
-        "files_on_disk": files_in_folder,
-        "loaded_keys_in_dict": list(vector_models.keys()),
-        "lang_model_loaded": lang_model is not None
-    }
-    
-@app.get("/healthcheck", tags=["System"])
-async def health_check():
-    """
-    Проверка работоспособности сервиса
-    """
-    return {
-        "status": "ok",
-        "message": "Service is running"
+        "files_on_disk": os.listdir(BASE_PATH) if os.path.exists(BASE_PATH) else [],
+        "loaded_keys": list(vector_models.keys()),
+        "lang_model_ok": lang_model is not None
     }
 
-if __name__ == "__main__":
-    import uvicorn
-    # Параметры порта должны совпадать с вашим .env или Docker-конфигом
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+@app.get("/healthcheck", tags=["System"])
+async def health_check():
+    return {"status": "ok", "models_count": len(vector_models)}
