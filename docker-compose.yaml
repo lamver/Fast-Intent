@@ -1,6 +1,7 @@
 services:
   downloader:
     image: alpine:latest
+    restart: "no"
     working_dir: /app
     volumes:
       - ${PWD}:/app  # Монтируем всё содержимое текущей папки, чтобы был доступ к скрипту .sh
