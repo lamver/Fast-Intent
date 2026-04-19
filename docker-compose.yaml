@@ -11,27 +11,27 @@ services:
         apk add --no-cache curl bash gzip
         mkdir -p /app/models
         
-        LANGS=("ru" "en" "es")
-
-        # 1. Скачиваем LID модель (определитель языка)
-        if [ ! -f "${MODELS_DIR}/lid.176.bin" ]; then
-            echo "Downloading language ID model..."
-            curl -L https://dl.fbaipublicfiles.com/fasttext/supervised-models/lid.176.bin -o "${MODELS_DIR}/lid.176.bin"
+        # Используем двойной $$ для экранирования
+        MODELS_DIR="/app/models"
+        
+        # 1. Скачиваем LID
+        if [ ! -f "$${MODELS_DIR}/lid.176.bin" ]; then
+          echo "Downloading LID..."
+          curl -L https://dl.fbaipublicfiles.com/fasttext/supervised-models/lid.176.bin -o "$${MODELS_DIR}/lid.176.bin"
         fi
 
-        # 2. Скачиваем языковые векторы
-        for lang in "${LANGS[@]}"; do
-            FILE="${MODELS_DIR}/cc.${lang}.300.bin"
-            if [ ! -f "$FILE" ]; then
-                echo "Downloading $lang model..."
-                curl -L "https://dl.fbaipublicfiles.com/fasttext/vectors-crawl/cc.${lang}.300.bin.gz" | gunzip > "$FILE"
-
-            else
-                echo "$lang model already exists."
-            fi
+        # 2. Скачиваем векторы (RU, EN, ES)
+        for lang in ru en es; do
+          FILE="$${MODELS_DIR}/cc.$${lang}.300.bin"
+          if [ ! -f "$$FILE" ]; then
+            echo "Downloading $$lang model..."
+            curl -L "https://fbaipublicfiles.com{lang}.300.bin.gz" | gunzip > "$$FILE"
+          else
+            echo "$$lang model already exists."
+          fi
         done
-
-        echo "All models are ready!"
+        
+        echo "All models ready!"
   fintent:
     build: .
     depends_on:
