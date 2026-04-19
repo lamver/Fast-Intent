@@ -3,7 +3,7 @@ import fasttext
 import numpy as np
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-from typing import List
+from typing import List, Dict
 from sklearn.metrics.pairwise import cosine_similarity
 from datetime import datetime
 
@@ -85,6 +85,57 @@ async def compare_texts(data: CompareRequest):
         "percentage": f"{round(float(similarity) * 100, 2)}%"
     }
 
+class RouterRequest(BaseModel):
+    text: str
+    intents: Dict[str, List[str]]  # Словарь: {"movies": ["ужасы", "кино"], "music": ["треки"]}
+
+@app.post("/route-intent", tags=["NLP"])
+async def route_intent(data: RouterRequest):
+    if not lang_model or not vector_models:
+        raise HTTPException(status_code=503, detail="Models not loaded")
+
+    # 1. Определяем язык и выбираем модель
+    lang = get_text_lang(data.text)
+    model = vector_models.get(lang) or vector_models.get("ru")
+    
+    # 2. Вектор входного текста
+    user_vec = model.get_sentence_vector(data.text).reshape(1, -1)
+    
+    best_intent = "unknown"
+    max_score = 0.0
+
+    # 3. Проходим по всем переданным интентам
+    for intent_name, examples in data.intents.items():
+        if not examples:
+            continue
+            
+        # Считаем векторы для всех примеров в этом интенте разом
+        example_vecs = np.array([model.get_sentence_vector(ex) for ex in examples])
+        
+        # Считаем сходство (матричное умножение — это быстро)
+        scores = cosine_similarity(user_vec, example_vecs)
+        current_max = float(np.max(scores))
+        
+        if current_max > max_score:
+            max_score = current_max
+            best_intent = intent_name
+
+    # 4. Порог отсечения мусора
+    threshold = 0.4
+    if max_score < threshold:
+        return {
+            "text": data.text,
+            "intent": "fallback",
+            "confidence": round(max_score, 4),
+            "message": "Ни один интент не подошел"
+        }
+
+    return {
+        "text": data.text,
+        "intent": best_intent,
+        "confidence": round(max_score, 4)
+    }
+    
 @app.get("/debug-models", tags=["System"])
 async def debug_models():
     import os
