@@ -106,6 +106,16 @@ async def get_embeddings(data: TextRequest):
         "language": lang,
         "embedding": vector.tolist()
     }
+
+@app.get("/debug-models", tags=["System"])
+async def debug_models():
+    import os
+    files_in_folder = os.listdir("/app/models") if os.path.exists("/app/models") else "Folder not found"
+    return {
+        "files_on_disk": files_in_folder,
+        "loaded_keys_in_dict": list(vector_models.keys()),
+        "lang_model_loaded": lang_model is not None
+    }
     
 @app.get("/healthcheck", tags=["System"])
 async def health_check():
