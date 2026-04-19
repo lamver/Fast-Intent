@@ -13,14 +13,26 @@ lang_model = None
 
 @app.on_event("startup")
 def load_models():
-    global vector_model, lang_model
+    global lang_model, vector_models
     try:
-        # Загружаем обе модели при старте
-        #vector_model = fasttext.load_model("cc.ru.300.bin")
-        lang_model = fasttext.load_model("lid.176.bin")
-        print("All models loaded successfully")
+        # 1. Загружаем определитель языка (он один на всех)
+        lang_model = fasttext.load_model("/app/models/lid.176.bin")
+        
+        # 2. Список языков, которые мы скачали в downloader
+        langs = ["ru", "en", "es"]
+        
+        for lang in langs:
+            model_path = f"/app/models/cc.{lang}.300.bin"
+            if os.path.exists(model_path):
+                vector_models[lang] = fasttext.load_model(model_path)
+                print(f"Model for {lang} loaded successfully")
+            else:
+                print(f"Warning: Model file for {lang} not found at {model_path}")
+
+        print(f"Startup complete. Total vector models loaded: {len(vector_models)}")
+        
     except Exception as e:
-        print(f"Error loading models: {e}")
+        print(f"Critical error during startup: {e}")
         
 class TextRequest(BaseModel):
     text: str
