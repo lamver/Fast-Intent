@@ -5,6 +5,7 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from typing import List
 from sklearn.metrics.pairwise import cosine_similarity
+from datetime import datetime
 
 app = FastAPI(title="NLP Service")
 
@@ -86,10 +87,33 @@ async def compare_texts(data: CompareRequest):
 
 @app.get("/debug-models", tags=["System"])
 async def debug_models():
+    import os
+    base_path = "/app/models"
+    debug_info = []
+    
+    if os.path.exists(base_path):
+        for filename in os.listdir(base_path):
+            file_path = os.path.join(base_path, filename)
+            
+            # Получаем метаданные файла
+            stat = os.stat(file_path)
+            size_mb = round(stat.st_size / (1024 * 1024), 2)
+            # Превращаем время в нормальную дату
+            mtime = datetime.fromtimestamp(stat.st_mtime).strftime('%Y-%m-%d %H:%M:%S')
+            
+            debug_info.append({
+                "file": filename,
+                "size_mb": size_mb,
+                "modified": mtime
+            })
+    else:
+        debug_info = "Folder /app/models not found"
+
     return {
-        "files_on_disk": os.listdir(BASE_PATH) if os.path.exists(BASE_PATH) else [],
-        "loaded_keys": list(vector_models.keys()),
-        "lang_model_ok": lang_model is not None
+        "files_info": debug_info,
+        "loaded_keys_in_dict": list(vector_models.keys()),
+        "lang_model_loaded": lang_model is not None,
+        "current_working_dir": os.getcwd()
     }
 
 @app.get("/healthcheck", tags=["System"])
