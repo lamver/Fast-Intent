@@ -12,6 +12,7 @@ app = FastAPI(title="NLP Service")
 # Глобальные переменные для моделей
 vector_model = None
 lang_model = None
+vector_models = {}
 
 @app.on_event("startup")
 def load_models():
@@ -61,6 +62,7 @@ class CompareRequest(BaseModel):
 
 @app.post("/compare-vectors", tags=["NLP"])
 async def compare_texts(data: CompareRequest):
+    global vector_models, lang_model
     # 1. Определяем язык первого текста, чтобы выбрать модель
     labels, _ = lang_model.predict(data.text1, k=1)
     lang = labels[0].replace("__label__", "")
@@ -88,6 +90,7 @@ async def compare_texts(data: CompareRequest):
     
 @app.post("/embeddings")
 async def get_embeddings(data: TextRequest):
+    global vector_models, lang_model
     # 1. Определяем, какой это язык
     labels, _ = lang_model.predict(data.text, k=1)
     lang = labels[0].replace("__label__", "")
