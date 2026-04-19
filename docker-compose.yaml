@@ -5,8 +5,8 @@ services:
       - .env
     ports:
       - "${PORT:-8000}:${PORT:-8000}"
-    volumes:
-      - .:/app
+    #volumes:
+      #- .:/app
     environment:
       - PYTHONUNBUFFERED=1
     deploy:

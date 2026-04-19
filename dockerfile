@@ -4,12 +4,20 @@ FROM python:3.10-slim
 RUN apt-get update && apt-get install -y \
     libasound2 \
     libsndfile1 \
+    curl \
+    gzip \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
+
+# Скачиваем модель для ОПРЕДЕЛЕНИЯ языка (176 языков в одном файле)
+RUN curl -L https://dl.fbaipublicfiles.com/fasttext/supervised-models/lid.176.bin -o lid.176.bin
+
+# Скачиваем модель для ВЕКТОРОВ (например, русскую)
+#RUN curl -L https://fbaipublicfiles.com | gunzip > cc.ru.300.bin
 
 COPY . .
 

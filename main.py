@@ -1,13 +1,51 @@
-from fastapi import FastAPI
+import fasttext
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
 
 # Создаем экземпляр приложения
-# Swagger будет доступен по адресу /docs
-app = FastAPI(
-    title="TTS Service",
-    description="Простой сервис для синтеза речи",
-    version="1.0.0"
-)
+app = FastAPI(title="NLP Service")
 
+# Глобальные переменные для моделей
+vector_model = None
+lang_model = None
+
+@app.on_event("startup")
+def load_models():
+    global vector_model, lang_model
+    try:
+        # Загружаем обе модели при старте
+        #vector_model = fasttext.load_model("cc.ru.300.bin")
+        lang_model = fasttext.load_model("lid.176.bin")
+        print("All models loaded successfully")
+    except Exception as e:
+        print(f"Error loading models: {e}")
+        
+class TextRequest(BaseModel):
+    text: str
+
+@app.post("/detect-language", tags=["NLP"])
+async def detect_language(data: TextRequest):
+    if lang_model is None:
+        raise HTTPException(status_code=503, detail="Language model not loaded")
+    
+    # Берем топ-5, чтобы было из чего фильтровать
+    labels, probabilities = lang_model.predict(data.text, k=5)
+    
+    # Фильтруем: оставляем только те, где уверенность > 0.01
+    results = [
+        {
+            "language": label.replace("__label__", ""),
+            "confidence": round(float(prob), 4)
+        }
+        for label, prob in zip(labels, probabilities)
+        if float(prob) >= 0.01
+    ]
+    
+    return {
+        "text": data.text,
+        "top_predictions": results
+    }
+    
 @app.get("/healthcheck", tags=["System"])
 async def health_check():
     """
