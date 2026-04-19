@@ -10,43 +10,31 @@ from typing import List
 app = FastAPI(title="NLP Service")
 
 # Глобальные переменные для моделей
-vector_model = None
-lang_model = None
+base_path = "/app/models"
 vector_models = {}
+lang_model = None
+
+try:
+    print("Pre-loading models for Gunicorn workers...")
+    # 1. LID
+    lid_path = f"{base_path}/lid.176.bin"
+    if os.path.exists(lid_path):
+        lang_model = fasttext.load_model(lid_path)
+        print("LID loaded")
+
+    # 2. Векторы
+    for lang in ["ru", "en", "es"]:
+        path = f"{base_path}/cc.{lang}.300.bin"
+        if os.path.exists(path):
+            vector_models[lang] = fasttext.load_model(path)
+            print(f"Vector {lang} loaded")
+except Exception as e:
+    print(f"MANUAL LOADING ERROR: {e}")
+
 
 @app.on_event("startup")
 def load_models():
-    global lang_model, vector_models
-    # Путь к папке внутри контейнера
-    base_path = "/app/models"
-    
-    try:
-        # 1. Загружаем определитель языка
-        lang_model = fasttext.load_model(f"{base_path}/lid.176.bin")
-        
-        # 2. Список файлов, которые мы точно видим на диске
-        target_files = {
-            "ru": "cc.ru.300.bin",
-            "en": "cc.en.300.bin",
-            "es": "cc.es.300.bin"
-        }
-        
-        for lang, filename in target_files.items():
-            full_path = f"{base_path}/{filename}"
-            if os.path.exists(full_path):
-                print(f"Loading {lang} model from {full_path}...")
-                # Загружаем модель
-                model = fasttext.load_model(full_path)
-                # Сохраняем в глобальный словарь
-                vector_models[lang] = model
-                print(f"Successfully loaded model: {lang}")
-            else:
-                print(f"File not found: {full_path}")
-
-        print(f"Final loaded models: {list(vector_models.keys())}")
-        
-    except Exception as e:
-        print(f"CRITICAL ERROR DURING LOADING: {str(e)}")
+    return True
         
 class TextRequest(BaseModel):
     text: str
@@ -82,8 +70,9 @@ class CompareRequest(BaseModel):
 async def compare_texts(data: CompareRequest):
     global vector_models, lang_model
     # 1. Определяем язык первого текста, чтобы выбрать модель
-    labels, _ = lang_model.predict(data.text1, k=1)
-    lang = labels[0].replace("__label__", "")
+    #labels, _ = lang_model.predict(data.text1, k=1)
+    predictions = lang_model.predict(data.text1, k=1)
+    lang = predictions[0][0].replace("__label__", "") 
     
     # 2. Берем нужную модель (например, русскую по дефолту, если язык не поддерживается)
     model = vector_models.get(lang, vector_models.get("ru"))
@@ -110,8 +99,9 @@ async def compare_texts(data: CompareRequest):
 async def get_embeddings(data: TextRequest):
     global vector_models, lang_model
     # 1. Определяем, какой это язык
-    labels, _ = lang_model.predict(data.text, k=1)
-    lang = labels[0].replace("__label__", "")
+    #labels, _ = lang_model.predict(data.text, k=1)
+    predictions = lang_model.predict(data.text1, k=1)
+    lang = predictions[0][0].replace("__label__", "") 
     
     # 2. Берем модель для этого языка (если нет — берем русскую по дефолту)
     model = vector_models.get(lang, vector_models.get("ru"))
