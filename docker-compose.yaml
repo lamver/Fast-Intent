@@ -26,7 +26,7 @@ services:
           FILE="$${MODELS_DIR}/cc.$${lang}.300.bin"
           if [ ! -f "$$FILE" ]; then
             echo "Downloading $$lang model..."
-            curl -L "https://fbaipublicfiles.com{lang}.300.bin.gz" | gunzip > "$$FILE"
+            curl -L "https://dl.fbaipublicfiles.com{lang}.300.bin.gz" | gunzip > "$$FILE"
           else
             echo "$$lang model already exists."
           fi
