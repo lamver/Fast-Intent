@@ -1,11 +1,13 @@
 import os
 import fasttext
 import numpy as np
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel
 from typing import List, Dict
 from sklearn.metrics.pairwise import cosine_similarity
 from datetime import datetime
+import httpx
+import asyncio
 
 app = FastAPI(title="NLP Service")
 
@@ -47,6 +49,60 @@ def get_text_lang(text: str):
     # Fasttext возвращает (('__label__ru',), array([0.99]))
     prediction = lang_model.predict(text, k=1)
     return prediction[0][0].replace("__label__", "")
+
+# Загружаем настройки из окружения
+ENV_ALLOWED_IPS = os.getenv("ALLOWED_IPS", "127.0.0.1").split(",")
+REMOTE_IPS_URL = os.getenv("REMOTE_IPS_URL")
+
+# Глобальный кэш для динамических IP
+dynamic_ips = set()
+
+async def update_remote_ips():
+    """Фоновая задача для обновления списка IP по URL"""
+    global dynamic_ips
+    if not REMOTE_IPS_URL:
+        return
+        
+    async with httpx.AsyncClient() as client:
+        while True:
+            try:
+                response = await client.get(REMOTE_IPS_URL, timeout=10.0)
+                if response.status_code == 200:
+                    # Предполагаем, что по URL отдается список через запятую или по одному в строке
+                    new_ips = response.text.replace("\n", ",").split(",")
+                    dynamic_ips = {ip.strip() for ip in new_ips if ip.strip()}
+                    print(f"Dynamic IPs updated: {dynamic_ips}")
+            except Exception as e:
+                print(f"Failed to fetch remote IPs: {e}")
+            
+            # Обновляем раз в 10 минут
+            await asyncio.sleep(600)
+            
+@app.on_event("startup")
+async def startup_ip_task():
+    # Запускаем фоновое обновление IP
+    asyncio.create_task(update_remote_ips())
+
+@app.middleware("http")
+async def ip_whitelist_middleware(request: Request, call_next):
+    # Пропускаем healthcheck, чтобы Coolify не пометил сервис как упавший
+    if request.url.path in ["/healthcheck", "/debug-models"]:
+        return await call_next(request)
+
+    client_ip = request.headers.get("x-forwarded-for") or request.client.host
+    if client_ip and "," in client_ip:
+        client_ip = client_ip.split(",")[0].strip()
+
+    # Проверка по обоим спискам
+    is_allowed = (client_ip in ENV_ALLOWED_IPS) or (client_ip in dynamic_ips)
+
+    if not is_allowed:
+        raise HTTPException(
+            status_code=403, 
+            detail=f"Access denied: IP {client_ip} not authorized"
+        )
+    
+    return await call_next(request)
 
 @app.post("/detect-language", tags=["NLP"])
 async def detect_language(data: TextRequest):
@@ -170,3 +226,33 @@ async def debug_models():
 @app.get("/healthcheck", tags=["System"])
 async def health_check():
     return {"status": "ok", "models_count": len(vector_models)}
+
+@app.get("/refresh-ips", tags=["System"])
+async def refresh_ips_endpoint(token: str = None):
+    # Добавим простую защиту, чтобы кто попало не дергал обновление
+    # Сверь токен из URL с тем, что в .env (например, REFRESH_TOKEN=super-secret)
+    if token != os.getenv("REFRESH_TOKEN"):
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+    try:
+        # Вызываем нашу функцию загрузки (без бесконечного цикла, просто один раз)
+        success = await force_update_ips()
+        if success:
+            return {"status": "success", "updated_ips": list(dynamic_ips)}
+        else:
+            return {"status": "error", "message": "Check server logs"}
+    except Exception as e:
+        return {"status": "error", "detail": str(e)}
+
+# Вспомогательная функция (вынеси её из цикла update_remote_ips)
+async def force_update_ips():
+    global dynamic_ips
+    if not REMOTE_IPS_URL:
+        return False
+    async with httpx.AsyncClient() as client:
+        response = await client.get(REMOTE_IPS_URL, timeout=10.0)
+        if response.status_code == 200:
+            new_ips = response.text.replace("\n", ",").split(",")
+            dynamic_ips = {ip.strip() for ip in new_ips if ip.strip()}
+            return True
+    return False
