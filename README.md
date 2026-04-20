@@ -1,12 +1,18 @@
 # Fast-Intent
 
-Fast-Intent is a production-ready NLP microservice built with FastAPI and FastText. It provides language detection and semantic similarity comparison using pre-trained FastText models. The service is containerized with Docker and can be easily deployed with Docker Compose.
+Fast-Intent is a production-ready NLP microservice built with FastAPI and FastText. It provides language detection, semantic similarity comparison, and intent routing using pre-trained FastText models. The service is containerized with Docker and can be easily deployed with Docker Compose.
+
+## Live Demo
+
+You can test the service interactively at **[datahunter.store/tools/text-intent](https://datahunter.store/tools/text-intent)**.
 
 ## Features
 
 - **Language Detection** – Detect the language of a text snippet using FastText's LID (Language Identification) model supporting 176 languages.
 - **Semantic Similarity** – Compute cosine similarity between two text snippets using FastText word embeddings (available for Russian, English, and Spanish).
-- **Health & Debug Endpoints** – Check service status and inspect loaded models.
+- **Intent Routing** – Route user text to the most relevant intent based on example phrases (multi‑class classification).
+- **IP Whitelist & Dynamic IP Updates** – Restrict access via static allowed IPs and/or a remotely fetched list (updated every 10 minutes).
+- **Health & Debug Endpoints** – Check service status, inspect loaded models, and manually trigger IP list refresh.
 - **Automatic Model Download** – Models are downloaded automatically via a separate Docker Compose service (`downloader`).
 - **Scalable** – Runs with Gunicorn and Uvicorn workers; the number of workers can be configured via environment variables.
 
@@ -140,6 +146,49 @@ Lists all model files present in the `/app/models` directory along with their si
 }
 ```
 
+### `POST /route-intent`
+
+Routes a user text to the most relevant intent based on provided example phrases for each intent.
+
+**Request:**
+```json
+{
+  "text": "I want to listen to rock music",
+  "intents": {
+    "music": ["play a song", "music playlist", "rock music"],
+    "movies": ["watch a film", "movie recommendations", "horror movies"],
+    "weather": ["what's the weather", "is it raining"]
+  }
+}
+```
+
+**Response:**
+```json
+{
+  "text": "I want to listen to rock music",
+  "intent": "music",
+  "confidence": 0.87
+}
+```
+If no intent reaches the confidence threshold (default 0.4), the service returns `"intent": "fallback"`.
+
+### `GET /refresh-ips`
+
+Manually triggers an update of the dynamic IP whitelist from the remote URL. Requires a `token` query parameter that matches the `REFRESH_TOKEN` environment variable.
+
+**Request:**
+```
+GET /refresh-ips?token=your-secret-token
+```
+
+**Response (success):**
+```json
+{
+  "status": "success",
+  "updated_ips": ["203.0.113.5", "198.51.100.10"]
+}
+```
+
 ## Configuration
 
 Environment variables are read from a `.env` file (see `.env.example` for the template).
@@ -148,7 +197,10 @@ Environment variables are read from a `.env` file (see `.env.example` for the te
 |----------|-------------|---------|
 | `PORT`   | Port on which the FastAPI application listens. | `8000` |
 | `WORKERS`| Number of Gunicorn worker processes. | `4` |
-| `TIMEOUT`| Request timeout in seconds. | `120` |
+| `TIMEOUT`| Request timeout in seconds (used by Gunicorn). | `120` |
+| `ALLOWED_IPS` | Comma‑separated list of IP addresses allowed to access the API (excluding `/healthcheck` and `/debug‑models`). | `127.0.0.1` |
+| `REMOTE_IPS_URL` | URL that returns a comma‑ or newline‑separated list of IP addresses; the service fetches and updates this list every 10 minutes. | – |
+| `REFRESH_TOKEN` | Secret token required for the manual IP‑refresh endpoint (`/refresh‑ips`). | – |
 
 You can also adjust resource limits (CPU, memory) in the `docker-compose.yaml` file under the `deploy.resources.limits` section.
 
@@ -174,6 +226,10 @@ fast-intent/
 3. **Sentence Vectors** – For similarity comparison, the service uses FastText’s `get_sentence_vector` method, which averages word vectors to produce a fixed‑length representation of the input text.
 
 4. **Similarity Calculation** – Cosine similarity is computed between the two sentence vectors using `scikit‑learn`’s `cosine_similarity` function.
+
+5. **Intent Routing** – For the `/route‑intent` endpoint, the service computes the vector of the input text and compares it with vectors of example phrases for each intent. The intent with the highest cosine similarity above a threshold (0.4) is selected.
+
+6. **IP Whitelisting** – Every request (except `/healthcheck` and `/debug‑models`) passes through a middleware that checks the client IP against a static list (`ALLOWED_IPS`) and a dynamically updated list fetched from `REMOTE_IPS_URL`. The dynamic list is refreshed every 10 minutes in a background task, and can also be updated manually via `/refresh‑ips` (requires a token).
 
 ## Troubleshooting
 
