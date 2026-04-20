@@ -4,7 +4,7 @@ Fast-Intent is a production-ready NLP microservice built with FastAPI and FastTe
 
 ## Live Demo
 
-You can test the service interactively at **[datahunter.store/tools/text/compare](datahunter.store/tools/text/compare)**.
+You can test the service interactively at **[https://datahunter.store/tools/text/compare](https://datahunter.store/tools/text/compare)**.
 
 ## Features
 
