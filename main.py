@@ -2,15 +2,20 @@ import os
 import fasttext
 import numpy as np
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from typing import List, Dict
 from sklearn.metrics.pairwise import cosine_similarity
 from datetime import datetime
-import httpx
 import asyncio
+from security import check_ip_middleware, update_remote_ips_task, force_update_ips, dynamic_ips
 
 app = FastAPI(title="NLP Service")
+app.middleware("http")(check_ip_middleware)
+
+@app.on_event("startup")
+async def startup_ip_task():
+    # Запускаем фоновое обновление IP
+    asyncio.create_task(update_remote_ips())
 
 # ПУТИ И МОДЕЛИ
 BASE_PATH = "/app/models"
@@ -57,64 +62,6 @@ REMOTE_IPS_URL = os.getenv("REMOTE_IPS_URL")
 
 # Глобальный кэш для динамических IP
 dynamic_ips = set()
-
-async def update_remote_ips():
-    """Фоновая задача для обновления списка IP по URL"""
-    global dynamic_ips
-    if not REMOTE_IPS_URL:
-        return
-        
-    async with httpx.AsyncClient() as client:
-        while True:
-            try:
-                response = await client.get(REMOTE_IPS_URL, timeout=10.0)
-                if response.status_code == 200:
-                    # Предполагаем, что по URL отдается список через запятую или по одному в строке
-                    new_ips = response.text.replace("\n", ",").split(",")
-                    dynamic_ips = {ip.strip() for ip in new_ips if ip.strip()}
-                    print(f"Dynamic IPs updated: {dynamic_ips}")
-            except Exception as e:
-                print(f"Failed to fetch remote IPs: {e}")
-            
-            # Обновляем раз в 10 минут
-            await asyncio.sleep(600)
-            
-@app.on_event("startup")
-async def startup_ip_task():
-    # Запускаем фоновое обновление IP
-    asyncio.create_task(update_remote_ips())
-
-@app.middleware("http")
-async def ip_whitelist_middleware(request: Request, call_next):
-    # 1. Пропускаем проверку для системных путей
-    if request.url.path in ["/healthcheck", "/refresh-ips", "/debug-models"]:
-        return await call_next(request)
-
-    # 2. Пытаемся достать реальный IP пользователя из заголовков прокси
-    forwarded = request.headers.get("x-forwarded-for")
-    if forwarded:
-        # X-Forwarded-For может содержать цепочку IP: "client, proxy1, proxy2"
-        # Нам нужен самый первый (левый)
-        client_ip = forwarded.split(",")[0].strip()
-    else:
-        # Если заголовка нет, берем то, что пришло (хост докера)
-        client_ip = request.client.host
-
-    # 3. Сверяем со списками
-    is_allowed = (client_ip in ENV_ALLOWED_IPS) or (client_ip in dynamic_ips)
-
-    # 4. Если IP — это локалка Docker (как твой 192.168.32.1), 
-    # и ты хочешь его разрешить для тестов, добавь его в ALLOWED_IPS в .env
-    
-    if not is_allowed:
-        # В Middleware лучше возвращать JSONResponse, так как HTTPException 
-        # внутри BaseHTTPMiddleware иногда ведет себя странно (как в твоем логе)
-        return JSONResponse(
-            status_code=403,
-            content={"detail": f"Access denied: IP {client_ip} not authorized"}
-        )
-    
-    return await call_next(request)
 
 @app.post("/detect-language", tags=["NLP"])
 async def detect_language(data: TextRequest):
@@ -274,16 +221,3 @@ async def refresh_ips_endpoint(token: str = None):
             return {"status": "error", "message": "Check server logs"}
     except Exception as e:
         return {"status": "error", "detail": str(e)}
-
-# Вспомогательная функция (вынеси её из цикла update_remote_ips)
-async def force_update_ips():
-    global dynamic_ips
-    if not REMOTE_IPS_URL:
-        return False
-    async with httpx.AsyncClient() as client:
-        response = await client.get(REMOTE_IPS_URL, timeout=10.0)
-        if response.status_code == 200:
-            new_ips = response.text.replace("\n", ",").split(",")
-            dynamic_ips = {ip.strip() for ip in new_ips if ip.strip()}
-            return True
-    return False
