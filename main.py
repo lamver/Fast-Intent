@@ -159,48 +159,67 @@ class RouterRequest(BaseModel):
 @app.post("/route-intent", tags=["NLP"])
 async def route_intent(data: RouterRequest):
     if not lang_model or not vector_models:
-        raise HTTPException(status_code=503, detail="Models not loaded")
+        raise HTTPException(status_code=503, detail="Модели не загружены")
 
     # 1. Определяем язык и выбираем модель
     lang = get_text_lang(data.text)
     model = vector_models.get(lang) or vector_models.get("ru")
     
-    # 2. Вектор входного текста
+    # 2. Вектор входного текста пользователя
     user_vec = model.get_sentence_vector(data.text).reshape(1, -1)
     
-    best_intent = "unknown"
-    max_score = 0.0
+    all_predictions = []
 
-    # 3. Проходим по всем переданным интентам
+    # 3. Проходим по всем переданным интентам и считаем сходство
     for intent_name, examples in data.intents.items():
         if not examples:
             continue
             
-        # Считаем векторы для всех примеров в этом интенте разом
+        # Считаем векторы для всех примеров-фраз в этом интенте
         example_vecs = np.array([model.get_sentence_vector(ex) for ex in examples])
         
-        # Считаем сходство (матричное умножение — это быстро)
+        # Находим косинусное сходство между текстом юзера и всеми примерами интента
         scores = cosine_similarity(user_vec, example_vecs)
-        current_max = float(np.max(scores))
         
-        if current_max > max_score:
-            max_score = current_max
-            best_intent = intent_name
+        # Берем максимальное значение (насколько близко подошел лучший пример из группы)
+        max_intent_score = float(np.max(scores))
+        
+        all_predictions.append({
+            "intent": intent_name,
+            "confidence": round(max_intent_score, 4)
+        })
 
-    # 4. Порог отсечения мусора
+    # 4. Сортируем результаты по убыванию уверенности
+    all_predictions.sort(key=lambda x: x["confidence"], reverse=True)
+
+    # 5. Если ничего не нашли (список пуст)
+    if not all_predictions:
+        return {"text": data.text, "intent": "fallback", "message": "Список интентов пуст"}
+
+    best = all_predictions[0]
+    
+    # Считаем "разрыв" до второго места (помогает понять, насколько бот уверен в выборе)
+    gap = 0
+    if len(all_predictions) > 1:
+        gap = round(best["confidence"] - all_predictions[1]["confidence"], 4)
+
+    # 6. Порог отсечения (Threshold)
     threshold = 0.4
-    if max_score < threshold:
+    if best["confidence"] < threshold:
         return {
             "text": data.text,
             "intent": "fallback",
-            "confidence": round(max_score, 4),
-            "message": "Ни один интент не подошел"
+            "confidence": best["confidence"],
+            "all_predictions": all_predictions,
+            "message": "Ни один интент не преодолел порог уверенности"
         }
 
     return {
         "text": data.text,
-        "intent": best_intent,
-        "confidence": round(max_score, 4)
+        "intent": best["intent"],
+        "confidence": best["confidence"],
+        "gap_to_second": gap,
+        "all_predictions": all_predictions
     }
     
 @app.get("/debug-models", tags=["System"])
