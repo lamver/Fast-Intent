@@ -7,7 +7,7 @@ from typing import List, Dict
 from sklearn.metrics.pairwise import cosine_similarity
 from datetime import datetime
 import asyncio
-from security import check_ip_middleware, update_remote_ips_task, force_update_ips, dynamic_ips
+from guard import check_ip_middleware, update_remote_ips_task, force_update_ips, dynamic_ips
 
 app = FastAPI(title="NLP Service")
 app.middleware("http")(check_ip_middleware)
