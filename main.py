@@ -1,7 +1,8 @@
 import os
 import fasttext
 import numpy as np
-from fastapi import FastAPI, HTTPException, Request, JSONResponse 
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from typing import List, Dict
 from sklearn.metrics.pairwise import cosine_similarity
