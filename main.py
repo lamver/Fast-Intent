@@ -15,7 +15,7 @@ app.middleware("http")(check_ip_middleware)
 @app.on_event("startup")
 async def startup_ip_task():
     # Запускаем фоновое обновление IP
-    asyncio.create_task(update_remote_ips())
+    asyncio.create_task(update_remote_ips_task())
 
 # ПУТИ И МОДЕЛИ
 BASE_PATH = "/app/models"
