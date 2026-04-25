@@ -107,7 +107,7 @@ class RouterRequest(BaseModel):
 @app.post("/route-intent", tags=["NLP"])
 async def route_intent(data: RouterRequest):
     if not lang_model or not vector_models:
-        raise HTTPException(status_code=503, detail="Модели не загружены")
+        raise HTTPException(status_code=503, detail="Models not loaded")
 
     # 1. Определяем язык и выбираем модель
     lang = get_text_lang(data.text)
@@ -142,7 +142,7 @@ async def route_intent(data: RouterRequest):
 
     # 5. Если ничего не нашли (список пуст)
     if not all_predictions:
-        return {"text": data.text, "intent": "fallback", "message": "Список интентов пуст"}
+        return {"text": data.text, "intent": "fallback", "message": "The intent list is empty"}
 
     best = all_predictions[0]
     
@@ -159,7 +159,7 @@ async def route_intent(data: RouterRequest):
             "intent": "fallback",
             "confidence": best["confidence"],
             "all_predictions": all_predictions,
-            "message": "Ни один интент не преодолел порог уверенности"
+            "message": "Not a single intent crossed the confidence threshold"
         }
 
     return {
